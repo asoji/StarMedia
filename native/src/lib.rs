@@ -32,7 +32,7 @@ macro_rules! throw_exception {
     };
 }
 
-#[unsafe(export_name = "Java_NativeGSMTC_setPropertyChangedCallback")]
+#[unsafe(export_name = "Java_one_devos_nautical_starmedia_StarMediaLib_setPropertyChangedCallback")]
 pub extern "system" fn properties_changed_callback<'local>(
     mut env: JNIEnv<'local>,
     _: JClass<'local>,
@@ -128,7 +128,7 @@ fn properties_changed(
     Ok(())
 }
 
-#[unsafe(export_name = "Java_NativeGSMTC_requestManager")]
+#[unsafe(export_name = "Java_one_devos_nautical_starmedia_StarMediaLib_requestManager")]
 pub extern "system" fn request_manager<'local>(
     mut env: JNIEnv<'local>,
     _: JClass<'local>,
@@ -145,7 +145,7 @@ pub extern "system" fn request_manager<'local>(
     current_session.into_raw() as usize
 }
 
-#[unsafe(export_name = "Java_NativeGSMTC_metadata")]
+#[unsafe(export_name = "Java_one_devos_nautical_starmedia_StarMediaLib_metadata")]
 pub extern "system" fn metadata<'local>(
     mut env: JNIEnv<'local>,
     _: JClass<'local>,
@@ -215,7 +215,7 @@ pub extern "system" fn metadata<'local>(
     array
 }
 
-#[unsafe(export_name = "Java_NativeGSMTC_tryPause")]
+#[unsafe(export_name = "Java_one_devos_nautical_starmedia_StarMediaLib_tryPause")]
 pub extern "system" fn try_pause<'local>(
     mut env: JNIEnv<'local>,
     _: JClass<'local>,
