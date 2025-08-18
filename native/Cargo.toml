@@ -17,3 +17,8 @@ features = [
     "Foundation_Collections",
     "Media_Control"
 ]
+
+[profile.release]
+opt-level = "z"
+lto = true
+debug = true
