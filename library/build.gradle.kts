@@ -1,6 +1,6 @@
 plugins {
-    kotlin("jvm") version "2.2.10"
-    kotlin("plugin.serialization") version "2.2.10"
+    alias(libs.plugins.kotlin)
+    alias(libs.plugins.kotlin.serialization)
 }
 
 repositories {
@@ -9,14 +9,15 @@ repositories {
 
 dependencies {
     testImplementation(kotlin("test"))
-    api("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
-    api("org.jetbrains.kotlinx:kotlinx-coroutines-core-jvm:1.10.2")
-    api("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.1")
-    api("org.slf4j:slf4j-api:2.0.16")
 
-    api("com.mayakapps.kache:kache:2.1.1")
+    api(libs.bundles.kotlinx.coroutines)
 
-    testRuntimeOnly("org.slf4j:slf4j-simple:2.0.16")
+    api(libs.kotlinx.serialization.json)
+    api(libs.slf4j.api)
+
+//    api(libs.kache) // not sure if we *need* this but if we do, then yeah
+
+    testRuntimeOnly(libs.slf4j.simple)
 }
 
 publishing {
