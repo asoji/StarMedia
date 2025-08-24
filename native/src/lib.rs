@@ -1,13 +1,14 @@
 use std::{
     ffi::c_void,
-    ptr::null_mut,
-    sync::{OnceLock, atomic::AtomicPtr},
+    sync::{
+        Once, RwLock,
+        mpsc::{Receiver, Sender, TryRecvError, channel},
+    },
 };
 
 use jni::{
-    JNIEnv, JavaVM,
-    objects::{GlobalRef, JClass, JObject, JObjectArray, JString, JValue},
-    signature::{JavaType, TypeSignature},
+    JNIEnv,
+    objects::{JClass, JObjectArray, JPrimitiveArray, JString},
 };
 use windows::{
     Foundation::TypedEventHandler,
@@ -36,96 +37,193 @@ macro_rules! throw_exception {
 pub extern "system" fn properties_changed_callback<'local>(
     mut env: JNIEnv<'local>,
     _: JClass<'local>,
-    callback: JObject<'local>,
     gsmtcs: usize,
-) {
-    let ptr = gsmtcs as *mut c_void;
+) -> JPrimitiveArray<'local, i64> {
+    static ONCE: Once = Once::new();
+    ONCE.call_once(|| {
+        let ptr = gsmtcs as *mut c_void;
 
-    let current_session =
-        unsafe { GlobalSystemMediaTransportControlsSession::from_raw_borrowed(&ptr).unwrap() };
+        let current_session =
+            unsafe { GlobalSystemMediaTransportControlsSession::from_raw_borrowed(&ptr).unwrap() };
 
-    let jvm = throw_exception!(env, env.get_java_vm());
-    JVM.get_or_init(|| jvm);
+        let handler = TypedEventHandler::new(properties_changed);
 
-    let callback = env.new_global_ref(callback).unwrap();
-    CALLBACK.get_or_init(|| callback);
+        throw_exception!(env, current_session.MediaPropertiesChanged(&handler));
+    });
 
-    let handler = TypedEventHandler::new(properties_changed);
+    let (tx, rx) = channel();
 
-    throw_exception!(env, current_session.MediaPropertiesChanged(&handler));
+    let idx = {
+        // TODO: This shold replace anything that is `None`
+        let mut queues = throw_exception!(env, QUEUE.write());
+        queues.push(Some(tx));
+        queues.len() - 1
+    };
 
-    let raw = handler.into_raw();
+    let array = throw_exception!(env, env.new_long_array(2));
+    throw_exception!(
+        env,
+        env.set_long_array_region(
+            &array,
+            0,
+            &[
+                idx as i64,
+                Box::into_raw(Box::new(rx)).expose_provenance() as i64,
+            ],
+        )
+    );
 
-    RAW.store(raw, std::sync::atomic::Ordering::SeqCst);
+    array
 }
 
-static JVM: OnceLock<JavaVM> = OnceLock::new();
-static CALLBACK: OnceLock<GlobalRef> = OnceLock::new();
-static RAW: AtomicPtr<c_void> = AtomicPtr::new(null_mut());
+#[unsafe(export_name = "Java_NativeGSMTC_dropReciever")]
+pub extern "system" fn drop_reciever_remove_sender<'local>(
+    mut env: JNIEnv<'local>,
+    _: JClass<'local>,
+    ptr: usize,
+    idx: usize,
+) {
+    let rx = std::ptr::with_exposed_provenance_mut::<Receiver<SongInfo>>(ptr);
+    let alloc = unsafe { Box::from_raw(rx) };
+    drop(alloc);
 
-// TODO: Handle exceptions in this callback, see:
-// https://github.com/jni-rs/jni-rs/issues/533#issuecomment-2087863105
+    throw_exception!(env, QUEUE.write())[idx] = None;
+}
+
+static QUEUE: RwLock<Vec<Option<Sender<SongInfo>>>> = RwLock::new(Vec::new());
+
+struct SongInfo {
+    title: Box<str>,
+    artist: Box<str>,
+    subtitle: Box<str>,
+    album_name: Box<str>,
+    album_artist: Box<str>,
+    album_len: i32,
+    track_number: i32,
+}
+
 fn properties_changed(
     session: windows::core::Ref<'_, GlobalSystemMediaTransportControlsSession>,
     _: windows::core::Ref<'_, MediaPropertiesChangedEventArgs>,
 ) -> Result<(), windows::core::Error> {
-    let jvm = JVM.get().unwrap();
+    let session = session.unwrap();
+    let props = session.TryGetMediaPropertiesAsync().unwrap().get().unwrap();
 
-    {
-        let mut guard = jvm.attach_current_thread().unwrap();
-        let callback = CALLBACK.get().unwrap();
+    let queues = &*QUEUE.read().unwrap();
 
-        let string_arg = jni::signature::JavaType::Object("java/lang/String".into());
-
-        let sig = TypeSignature {
-            args: vec![
-                string_arg.clone(),
-                string_arg.clone(),
-                string_arg.clone(),
-                string_arg.clone(),
-                string_arg,
-                JavaType::Primitive(jni::signature::Primitive::Int),
-                JavaType::Primitive(jni::signature::Primitive::Int),
-            ],
-            ret: jni::signature::ReturnType::Primitive(jni::signature::Primitive::Void),
-        };
-
-        let session = session.unwrap();
-        let props = session.TryGetMediaPropertiesAsync().unwrap().get().unwrap();
-
-        let title = props.Title().unwrap().to_string();
-        let artist = props.Artist().unwrap().to_string();
-        let subtitle = props.Subtitle().unwrap().to_string();
-        let album_name = props.AlbumTitle().unwrap().to_string();
-        let album_artist = props.AlbumArtist().unwrap().to_string();
+    for queue in queues.iter().filter_map(Clone::clone) {
+        let title = props.Title().unwrap().to_string().into_boxed_str();
+        let artist = props.Artist().unwrap().to_string().into_boxed_str();
+        let subtitle = props.Subtitle().unwrap().to_string().into_boxed_str();
+        let album_name = props.AlbumTitle().unwrap().to_string().into_boxed_str();
+        let album_artist = props.AlbumArtist().unwrap().to_string().into_boxed_str();
         let album_len = props.AlbumTrackCount().unwrap();
         let track_number = props.TrackNumber().unwrap();
-
-        let jtitle = guard.new_string(title).unwrap();
-        let jartist = guard.new_string(artist).unwrap();
-        let jsubtitle = guard.new_string(subtitle).unwrap();
-        let jalbum_name = guard.new_string(album_name).unwrap();
-        let jalbum_artist = guard.new_string(album_artist).unwrap();
-
-        guard
-            .call_method(
-                callback,
-                "propertiesChanged",
-                sig.to_string(),
-                &[
-                    JValue::Object(&jtitle),
-                    JValue::Object(&jartist),
-                    JValue::Object(&jsubtitle),
-                    JValue::Object(&jalbum_name),
-                    JValue::Object(&jalbum_artist),
-                    JValue::Int(album_len),
-                    JValue::Int(track_number),
-                ],
-            )
+        queue
+            .send(SongInfo {
+                title: title.clone(),
+                artist: artist.clone(),
+                subtitle: subtitle.clone(),
+                album_name: album_name.clone(),
+                album_artist: album_artist.clone(),
+                album_len,
+                track_number,
+            })
             .unwrap();
     }
 
     Ok(())
+}
+
+#[unsafe(export_name = "Java_one_devos_nautical_starmedia_StarMediaLib_requestManager")]
+pub extern "system" fn get_song_info<'local>(
+    mut env: JNIEnv<'local>,
+    _: JClass<'local>,
+    ptr: usize,
+) -> JObjectArray<'local> {
+    let rx = std::ptr::with_exposed_provenance_mut::<Receiver<SongInfo>>(ptr);
+    let rx = unsafe { &mut *rx };
+
+    match rx.try_recv() {
+        Ok(SongInfo {
+            title,
+            artist,
+            subtitle,
+            album_name,
+            album_artist,
+            album_len,
+            track_number,
+        }) => {
+            let string_class = env.find_class("java/lang/String").unwrap();
+
+            let array = env
+                .new_object_array(7, string_class, JString::default())
+                .unwrap();
+
+            throw_exception!(
+                env,
+                env.set_object_array_element(
+                    &array,
+                    0,
+                    throw_exception!(env, env.new_string(title))
+                )
+            );
+            throw_exception!(
+                env,
+                env.set_object_array_element(
+                    &array,
+                    1,
+                    throw_exception!(env, env.new_string(artist))
+                )
+            );
+            throw_exception!(
+                env,
+                env.set_object_array_element(
+                    &array,
+                    2,
+                    throw_exception!(env, env.new_string(subtitle))
+                )
+            );
+            throw_exception!(
+                env,
+                env.set_object_array_element(
+                    &array,
+                    3,
+                    throw_exception!(env, env.new_string(album_name))
+                )
+            );
+            throw_exception!(
+                env,
+                env.set_object_array_element(
+                    &array,
+                    4,
+                    throw_exception!(env, env.new_string(album_artist))
+                )
+            );
+            throw_exception!(
+                env,
+                env.set_object_array_element(
+                    &array,
+                    5,
+                    throw_exception!(env, env.new_string(album_len.to_string()))
+                )
+            );
+            throw_exception!(
+                env,
+                env.set_object_array_element(
+                    &array,
+                    6,
+                    throw_exception!(env, env.new_string(track_number.to_string()))
+                )
+            );
+
+            array
+        }
+        Err(TryRecvError::Empty) => JObjectArray::default(),
+        Err(TryRecvError::Disconnected) => {
+            throw_exception!(env, Err("Reciever was disconnected"))
+        }
+    }
 }
 
 #[unsafe(export_name = "Java_one_devos_nautical_starmedia_StarMediaLib_requestManager")]
@@ -168,7 +266,6 @@ pub extern "system" fn metadata<'local>(
     let album_artist = throw_exception!(env, props.AlbumArtist()).to_string();
     let album_len = throw_exception!(env, props.AlbumTrackCount()).to_string();
     let track_number = throw_exception!(env, props.TrackNumber()).to_string();
-
     let string_class = env.find_class("java/lang/String").unwrap();
 
     let array = env
@@ -181,11 +278,11 @@ pub extern "system" fn metadata<'local>(
     );
     throw_exception!(
         env,
-        env.set_object_array_element(&array, 1, throw_exception!(env, env.new_string(subtitle)))
+        env.set_object_array_element(&array, 1, throw_exception!(env, env.new_string(artist)))
     );
     throw_exception!(
         env,
-        env.set_object_array_element(&array, 2, throw_exception!(env, env.new_string(artist)))
+        env.set_object_array_element(&array, 2, throw_exception!(env, env.new_string(subtitle)))
     );
     throw_exception!(
         env,
