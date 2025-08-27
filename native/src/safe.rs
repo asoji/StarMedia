@@ -152,3 +152,25 @@ pub fn set_properties_changed_callback(
 
     Ok((idx, rx))
 }
+
+pub fn try_get_timeline_props(
+    session: &GlobalSystemMediaTransportControlsSession,
+) -> Result<[i64; 6], windows::core::Error> {
+    let props = session.GetTimelineProperties()?;
+
+    let start_time = props.StartTime()?.Duration;
+    let end_time = props.EndTime()?.Duration;
+    let pos = props.Position()?.Duration;
+    let last_updated = props.LastUpdatedTime()?.UniversalTime;
+    let max_seek_time = props.MaxSeekTime()?.Duration;
+    let min_seek_time = props.MinSeekTime()?.Duration;
+
+    Ok([
+        start_time,
+        end_time,
+        pos,
+        last_updated,
+        max_seek_time,
+        min_seek_time,
+    ])
+}

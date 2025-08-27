@@ -10,11 +10,12 @@ use jni::{
 use windows::{
     Media::Control::{
         GlobalSystemMediaTransportControlsSession, GlobalSystemMediaTransportControlsSessionManager,
-    },
-    core::Interface,
+    }, core::Interface
 };
 
-use crate::safe::{set_properties_changed_callback, try_extract_props, wrap_props_in_array};
+use crate::safe::{
+    set_properties_changed_callback, try_extract_props, try_get_timeline_props, wrap_props_in_array,
+};
 
 mod safe;
 
@@ -66,7 +67,7 @@ pub extern "system" fn drop_reciever_remove_sender<'local>(
     throw_exception!(env, QUEUE.write())[idx] = None;
 }
 
-#[unsafe(export_name = "Java_one_devos_nautical_starmedia_StarMediaLib_requestManager")]
+#[unsafe(export_name = "Java_one_devos_nautical_starmedia_StarMediaLib_getSongInfo")]
 pub extern "system" fn get_song_info<'local>(
     mut env: JNIEnv<'local>,
     _: JClass<'local>,
@@ -119,18 +120,92 @@ pub extern "system" fn metadata<'local>(
     wrap_props_in_array(env, info)
 }
 
+#[unsafe(export_name = "Java_one_devos_nautical_starmedia_StarMediaLib_timeline")]
+pub extern "system" fn timeline<'local>(
+    mut env: JNIEnv<'local>,
+    _: JClass<'local>,
+    gsmtcs: usize,
+) -> JPrimitiveArray<'local, i64> {
+    let ptr = std::ptr::with_exposed_provenance_mut(gsmtcs);
+    let current_session =
+        unsafe { GlobalSystemMediaTransportControlsSession::from_raw_borrowed(&ptr).unwrap() };
+
+    let timeline_props = throw_exception!(env, try_get_timeline_props(current_session));
+
+    let array = throw_exception!(env, env.new_long_array(timeline_props.len() as i32));
+    throw_exception!(env, env.set_long_array_region(&array, 0, &timeline_props));
+
+    array
+}
+
 #[unsafe(export_name = "Java_one_devos_nautical_starmedia_StarMediaLib_tryPause")]
 pub extern "system" fn try_pause<'local>(
     mut env: JNIEnv<'local>,
     _: JClass<'local>,
     gsmtcs: usize,
-) {
+) -> bool {
     let ptr = std::ptr::with_exposed_provenance_mut(gsmtcs);
 
     let gsmtcs =
         unsafe { GlobalSystemMediaTransportControlsSession::from_raw_borrowed(&ptr).unwrap() };
 
-    throw_exception!(env, gsmtcs.TryPauseAsync());
+    throw_exception!(env, throw_exception!(env, gsmtcs.TryPauseAsync()).get())
+}
+
+#[unsafe(export_name = "Java_one_devos_nautical_starmedia_StarMediaLib_tryPlay")]
+pub extern "system" fn try_play<'local>(
+    mut env: JNIEnv<'local>,
+    _: JClass<'local>,
+    gsmtcs: usize,
+) -> bool {
+    let ptr = std::ptr::with_exposed_provenance_mut(gsmtcs);
+
+    let gsmtcs =
+        unsafe { GlobalSystemMediaTransportControlsSession::from_raw_borrowed(&ptr).unwrap() };
+
+    throw_exception!(env, throw_exception!(env, gsmtcs.TryPlayAsync()).get())
+}
+
+#[unsafe(export_name = "Java_one_devos_nautical_starmedia_StarMediaLib_TryTogglePlayPause")]
+pub extern "system" fn try_toggle_pause_play<'local>(
+    mut env: JNIEnv<'local>,
+    _: JClass<'local>,
+    gsmtcs: usize,
+) -> bool {
+    let ptr = std::ptr::with_exposed_provenance_mut(gsmtcs);
+
+    let gsmtcs =
+        unsafe { GlobalSystemMediaTransportControlsSession::from_raw_borrowed(&ptr).unwrap() };
+
+    throw_exception!(env, throw_exception!(env, gsmtcs.TryTogglePlayPauseAsync()).get())
+}
+
+#[unsafe(export_name = "Java_one_devos_nautical_starmedia_StarMediaLib_TrySkipNext")]
+pub extern "system" fn try_skip_next<'local>(
+    mut env: JNIEnv<'local>,
+    _: JClass<'local>,
+    gsmtcs: usize,
+) -> bool {
+    let ptr = std::ptr::with_exposed_provenance_mut(gsmtcs);
+
+    let gsmtcs =
+        unsafe { GlobalSystemMediaTransportControlsSession::from_raw_borrowed(&ptr).unwrap() };
+
+    throw_exception!(env, throw_exception!(env, gsmtcs.TrySkipNextAsync()).get())
+}
+
+#[unsafe(export_name = "Java_one_devos_nautical_starmedia_StarMediaLib_TrySkipPrevious")]
+pub extern "system" fn try_skip_previous<'local>(
+    mut env: JNIEnv<'local>,
+    _: JClass<'local>,
+    gsmtcs: usize,
+) -> bool {
+    let ptr = std::ptr::with_exposed_provenance_mut(gsmtcs);
+
+    let gsmtcs =
+        unsafe { GlobalSystemMediaTransportControlsSession::from_raw_borrowed(&ptr).unwrap() };
+
+    throw_exception!(env, throw_exception!(env, gsmtcs.TrySkipPreviousAsync()).get())
 }
 
 #[macro_export]
