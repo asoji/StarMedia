@@ -20,9 +20,14 @@ object StarMediaLib {
     private external fun metadata(manager: Long): Array<Any?>?
     private external fun setPropertyChangedCallback(manager: Long): LongArray
     private external fun timeline(manager: Long): LongArray
+    private external fun getStatus(manager: Long): Int
 
     private external fun dropReceiver(ptr: Long, index: Long)
     private external fun getSongInfo(ptr: Long): Array<Any?>
+
+    fun getStatus(): PlaybackStatus {
+        return PlaybackStatus.fromGSMTCS(this.getStatus(this.requestManager()))
+    }
 
     fun tryPlay(): Boolean = this.tryPlay(this.requestManager())
     fun tryPause(): Boolean = this.tryPause(this.requestManager())
