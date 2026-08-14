@@ -1,16 +1,15 @@
 use std::sync::{
-    RwLock,
     mpsc::{Receiver, Sender, TryRecvError},
+    RwLock,
 };
 
-use jni::{
-    JNIEnv,
-    objects::{JClass, JObjectArray, JPrimitiveArray},
-};
+use jni::objects::JLongArray;
+use jni::sys::{jboolean, jlongArray, jobjectArray};
+use jni::{objects::{JClass, JObjectArray}, EnvUnowned};
 use windows::{
-    Media::Control::{
+    core::Interface, Media::Control::{
         GlobalSystemMediaTransportControlsSession, GlobalSystemMediaTransportControlsSessionManager,
-    }, core::Interface
+    }
 };
 
 use crate::safe::{
@@ -27,198 +26,215 @@ static QUEUE: RwLock<Vec<Option<Sender<SongInfoResult>>>> = RwLock::new(Vec::new
 
 #[unsafe(export_name = "Java_one_devos_nautical_starmedia_StarMediaLib_setPropertyChangedCallback")]
 pub extern "system" fn properties_changed_callback<'local>(
-    mut env: JNIEnv<'local>,
+    mut unowned_env: EnvUnowned<'local>,
     _: JClass<'local>,
     gsmtcs: usize,
-) -> JPrimitiveArray<'local, i64> {
-    let ptr = std::ptr::with_exposed_provenance_mut(gsmtcs);
+) -> jlongArray {
+    let outcome = unowned_env.with_env(|env| -> jni::errors::Result<jlongArray> {
+        let ptr = std::ptr::with_exposed_provenance_mut(gsmtcs);
 
-    let current_session =
-        unsafe { GlobalSystemMediaTransportControlsSession::from_raw_borrowed(&ptr).unwrap() };
-    let (idx, rx) = throw_exception!(env, set_properties_changed_callback(current_session));
+        let current_session =
+            unsafe { GlobalSystemMediaTransportControlsSession::from_raw_borrowed(&ptr).unwrap() };
+        let (idx, rx) = set_properties_changed_callback(current_session).unwrap();
 
-    let array = throw_exception!(env, env.new_long_array(2));
-    throw_exception!(
-        env,
-        env.set_long_array_region(
-            &array,
-            0,
-            &[
-                idx as i64,
-                Box::into_raw(Box::new(rx)).expose_provenance() as i64,
-            ],
-        )
-    );
+        let array = env.new_long_array(2).unwrap();
+        array.set_region(env, 0, &[
+            idx as i64,
+            Box::into_raw(Box::new(rx)).expose_provenance() as i64,
+        ]).expect("Failed to set into region!");
 
-    array
+        Ok(array.into_raw())
+    });
+
+    outcome.resolve::<jni::errors::ThrowRuntimeExAndDefault>()
 }
 
-#[unsafe(export_name = "Java_NativeGSMTC_dropReciever")]
-pub extern "system" fn drop_reciever_remove_sender<'local>(
-    mut env: JNIEnv<'local>,
+#[unsafe(export_name = "Java_NativeGSMTC_dropReceiver")]
+pub extern "system" fn drop_receiver_remove_sender<'local>(
+    mut unowned_env: EnvUnowned<'local>,
     _: JClass<'local>,
     ptr: usize,
     idx: usize,
 ) {
-    let rx = std::ptr::with_exposed_provenance_mut::<Receiver<SongInfoResult>>(ptr);
-    let alloc = unsafe { Box::from_raw(rx) };
-    drop(alloc);
+    let outcome = unowned_env.with_env(|env| -> jni::errors::Result<_> {
+        let rx = std::ptr::with_exposed_provenance_mut::<Receiver<SongInfoResult>>(ptr);
+        let alloc = unsafe { Box::from_raw(rx) };
+        drop(alloc);
 
-    throw_exception!(env, QUEUE.write())[idx] = None;
+        QUEUE.write().unwrap()[idx] = None;
+        Ok(())
+    });
+
+    outcome.resolve::<jni::errors::ThrowRuntimeExAndDefault>();
 }
 
 #[unsafe(export_name = "Java_one_devos_nautical_starmedia_StarMediaLib_getSongInfo")]
 pub extern "system" fn get_song_info<'local>(
-    mut env: JNIEnv<'local>,
+    mut unowned_env: EnvUnowned<'local>,
     _: JClass<'local>,
     ptr: usize,
-) -> JObjectArray<'local> {
-    let rx = std::ptr::with_exposed_provenance_mut::<Receiver<SongInfoResult>>(ptr);
-    let rx = unsafe { &mut *rx };
+) -> jobjectArray {
+    let outcome = unowned_env.with_env(|env| -> jni::errors::Result<jobjectArray> {
+        let rx = std::ptr::with_exposed_provenance_mut::<Receiver<SongInfoResult>>(ptr);
+        let rx = unsafe { &mut *rx };
 
-    match rx.try_recv() {
-        Ok(result) => {
-            let info = throw_exception!(env, result);
-            wrap_props_in_array(env, info)
+        match rx.try_recv() {
+            Ok(result) => {
+                Ok(wrap_props_in_array(env, result.unwrap()).into_raw())
+            }
+            Err(TryRecvError::Empty) => Ok(jobjectArray::default()),
+            Err(TryRecvError::Disconnected) => {
+                panic!("Receiver was disconnected")
+            }
         }
-        Err(TryRecvError::Empty) => JObjectArray::default(),
-        Err(TryRecvError::Disconnected) => {
-            throw_exception!(env, Err("Reciever was disconnected"))
-        }
-    }
+    });
+
+    outcome.resolve::<jni::errors::ThrowRuntimeExAndDefault>()
 }
 
 #[unsafe(export_name = "Java_one_devos_nautical_starmedia_StarMediaLib_requestManager")]
 pub extern "system" fn request_manager<'local>(
-    mut env: JNIEnv<'local>,
+    mut unowned_env: EnvUnowned<'local>,
     _: JClass<'local>,
 ) -> usize {
-    let manager = throw_exception!(
-        env,
-        GlobalSystemMediaTransportControlsSessionManager::RequestAsync()
-    );
+    let outcome = unowned_env.with_env(|_env| -> jni::errors::Result<usize> {
+        let manager = GlobalSystemMediaTransportControlsSessionManager::RequestAsync().unwrap();
+        let gsmtcs =  manager.join().unwrap();
+        let current_session = gsmtcs.GetCurrentSession().unwrap();
 
-    let gsmtcs = throw_exception!(env, manager.get());
+        Ok(current_session.into_raw().expose_provenance())
+    });
 
-    let current_session = throw_exception!(env, gsmtcs.GetCurrentSession());
-
-    current_session.into_raw().expose_provenance()
+    outcome.resolve::<jni::errors::ThrowRuntimeExAndDefault>()
 }
 
 #[unsafe(export_name = "Java_one_devos_nautical_starmedia_StarMediaLib_metadata")]
 pub extern "system" fn metadata<'local>(
-    mut env: JNIEnv<'local>,
+    mut unowned_env: EnvUnowned<'local>,
     _: JClass<'local>,
     gsmtcs: usize,
 ) -> JObjectArray<'local> {
-    let ptr = std::ptr::with_exposed_provenance_mut(gsmtcs);
+    let outcome = unowned_env.with_env(|env| -> jni::errors::Result<JObjectArray<'local>> {
+        let ptr = std::ptr::with_exposed_provenance_mut(gsmtcs);
 
-    let current_session =
-        unsafe { GlobalSystemMediaTransportControlsSession::from_raw_borrowed(&ptr).unwrap() };
+        let current_session =
+            unsafe { GlobalSystemMediaTransportControlsSession::from_raw_borrowed(&ptr).unwrap() };
 
-    let info = throw_exception!(env, try_extract_props(current_session));
-    wrap_props_in_array(env, info)
+        let info = try_extract_props(current_session).unwrap();
+        Ok(wrap_props_in_array(env, info))
+    });
+
+    outcome.resolve::<jni::errors::ThrowRuntimeExAndDefault>()
 }
 
 #[unsafe(export_name = "Java_one_devos_nautical_starmedia_StarMediaLib_timeline")]
 pub extern "system" fn timeline<'local>(
-    mut env: JNIEnv<'local>,
+    mut unowned_env: EnvUnowned<'local>,
     _: JClass<'local>,
     gsmtcs: usize,
-) -> JPrimitiveArray<'local, i64> {
-    let ptr = std::ptr::with_exposed_provenance_mut(gsmtcs);
-    let current_session =
-        unsafe { GlobalSystemMediaTransportControlsSession::from_raw_borrowed(&ptr).unwrap() };
+) -> JLongArray<'local> {
+    let outcome = unowned_env.with_env(|env| -> jni::errors::Result<JLongArray> {
+        let ptr = std::ptr::with_exposed_provenance_mut(gsmtcs);
+        let current_session =
+            unsafe { GlobalSystemMediaTransportControlsSession::from_raw_borrowed(&ptr).unwrap() };
 
-    let timeline_props = throw_exception!(env, try_get_timeline_props(current_session));
+        let timeline_props = try_get_timeline_props(current_session).unwrap();
 
-    let array = throw_exception!(env, env.new_long_array(timeline_props.len() as i32));
-    throw_exception!(env, env.set_long_array_region(&array, 0, &timeline_props));
+        let array = env.new_long_array(timeline_props.len()).unwrap();
+        array.set_region(env, 0, &timeline_props).unwrap();
 
-    array
+        Ok(array)
+    });
+
+    outcome.resolve::<jni::errors::ThrowRuntimeExAndDefault>()
 }
 
 #[unsafe(export_name = "Java_one_devos_nautical_starmedia_StarMediaLib_tryPause")]
 pub extern "system" fn try_pause<'local>(
-    mut env: JNIEnv<'local>,
+    mut unowned_env: EnvUnowned<'local>,
     _: JClass<'local>,
     gsmtcs: usize,
-) -> bool {
-    let ptr = std::ptr::with_exposed_provenance_mut(gsmtcs);
+) -> jboolean {
+    let outcome = unowned_env.with_env(|_env| -> jni::errors::Result<jboolean> {
+        let ptr = std::ptr::with_exposed_provenance_mut(gsmtcs);
 
-    let gsmtcs =
-        unsafe { GlobalSystemMediaTransportControlsSession::from_raw_borrowed(&ptr).unwrap() };
+        let gsmtcs =
+            unsafe { GlobalSystemMediaTransportControlsSession::from_raw_borrowed(&ptr).unwrap() };
 
-    throw_exception!(env, throw_exception!(env, gsmtcs.TryPauseAsync()).get())
+        Ok(gsmtcs.TryPauseAsync().unwrap().join().unwrap())
+    });
+
+    outcome.resolve::<jni::errors::ThrowRuntimeExAndDefault>()
 }
 
 #[unsafe(export_name = "Java_one_devos_nautical_starmedia_StarMediaLib_tryPlay")]
 pub extern "system" fn try_play<'local>(
-    mut env: JNIEnv<'local>,
+    mut unowned_env: EnvUnowned<'local>,
     _: JClass<'local>,
     gsmtcs: usize,
 ) -> bool {
-    let ptr = std::ptr::with_exposed_provenance_mut(gsmtcs);
+    let outcome = unowned_env.with_env(|_env| -> jni::errors::Result<jboolean> {
+        let ptr = std::ptr::with_exposed_provenance_mut(gsmtcs);
 
-    let gsmtcs =
-        unsafe { GlobalSystemMediaTransportControlsSession::from_raw_borrowed(&ptr).unwrap() };
+        let gsmtcs =
+            unsafe { GlobalSystemMediaTransportControlsSession::from_raw_borrowed(&ptr).unwrap() };
 
-    throw_exception!(env, throw_exception!(env, gsmtcs.TryPlayAsync()).get())
+        Ok(gsmtcs.TryPlayAsync().unwrap().join().unwrap())
+    });
+
+    outcome.resolve::<jni::errors::ThrowRuntimeExAndDefault>()
 }
 
-#[unsafe(export_name = "Java_one_devos_nautical_starmedia_StarMediaLib_TryTogglePlayPause")]
+#[unsafe(export_name = "Java_one_devos_nautical_starmedia_StarMediaLib_tryTogglePlayPause")]
 pub extern "system" fn try_toggle_pause_play<'local>(
-    mut env: JNIEnv<'local>,
+    mut unowned_env: EnvUnowned<'local>,
     _: JClass<'local>,
     gsmtcs: usize,
 ) -> bool {
-    let ptr = std::ptr::with_exposed_provenance_mut(gsmtcs);
+    let outcome = unowned_env.with_env(|_env| -> jni::errors::Result<jboolean> {
+        let ptr = std::ptr::with_exposed_provenance_mut(gsmtcs);
 
-    let gsmtcs =
-        unsafe { GlobalSystemMediaTransportControlsSession::from_raw_borrowed(&ptr).unwrap() };
+        let gsmtcs =
+            unsafe { GlobalSystemMediaTransportControlsSession::from_raw_borrowed(&ptr).unwrap() };
 
-    throw_exception!(env, throw_exception!(env, gsmtcs.TryTogglePlayPauseAsync()).get())
+        Ok(gsmtcs.TryTogglePlayPauseAsync().unwrap().join().unwrap())
+    });
+
+    outcome.resolve::<jni::errors::ThrowRuntimeExAndDefault>()
 }
 
-#[unsafe(export_name = "Java_one_devos_nautical_starmedia_StarMediaLib_TrySkipNext")]
+#[unsafe(export_name = "Java_one_devos_nautical_starmedia_StarMediaLib_trySkipNext")]
 pub extern "system" fn try_skip_next<'local>(
-    mut env: JNIEnv<'local>,
+    mut unowned_env: EnvUnowned<'local>,
     _: JClass<'local>,
     gsmtcs: usize,
 ) -> bool {
-    let ptr = std::ptr::with_exposed_provenance_mut(gsmtcs);
+    let outcome = unowned_env.with_env(|_env| -> jni::errors::Result<jboolean> {
+        let ptr = std::ptr::with_exposed_provenance_mut(gsmtcs);
 
-    let gsmtcs =
-        unsafe { GlobalSystemMediaTransportControlsSession::from_raw_borrowed(&ptr).unwrap() };
+        let gsmtcs =
+            unsafe { GlobalSystemMediaTransportControlsSession::from_raw_borrowed(&ptr).unwrap() };
 
-    throw_exception!(env, throw_exception!(env, gsmtcs.TrySkipNextAsync()).get())
+        Ok(gsmtcs.TrySkipNextAsync().unwrap().join().unwrap())
+    });
+
+    outcome.resolve::<jni::errors::ThrowRuntimeExAndDefault>()
 }
 
 #[unsafe(export_name = "Java_one_devos_nautical_starmedia_StarMediaLib_TrySkipPrevious")]
 pub extern "system" fn try_skip_previous<'local>(
-    mut env: JNIEnv<'local>,
+    mut unowned_env: EnvUnowned<'local>,
     _: JClass<'local>,
     gsmtcs: usize,
 ) -> bool {
-    let ptr = std::ptr::with_exposed_provenance_mut(gsmtcs);
+    let outcome = unowned_env.with_env(|_env| -> jni::errors::Result<jboolean> {
+        let ptr = std::ptr::with_exposed_provenance_mut(gsmtcs);
 
-    let gsmtcs =
-        unsafe { GlobalSystemMediaTransportControlsSession::from_raw_borrowed(&ptr).unwrap() };
+        let gsmtcs =
+            unsafe { GlobalSystemMediaTransportControlsSession::from_raw_borrowed(&ptr).unwrap() };
 
-    throw_exception!(env, throw_exception!(env, gsmtcs.TrySkipPreviousAsync()).get())
-}
+        Ok(gsmtcs.TrySkipPreviousAsync().unwrap().join().unwrap())
+    });
 
-#[macro_export]
-macro_rules! throw_exception {
-    ($env:ident, $try:expr) => {
-        match $try {
-            Ok(ok) => ok,
-            Err(e) => {
-                if !$env.exception_check().unwrap() {
-                    $env.throw(e.to_string()).unwrap();
-                }
-                return Default::default();
-            }
-        }
-    };
+    outcome.resolve::<jni::errors::ThrowRuntimeExAndDefault>()
 }

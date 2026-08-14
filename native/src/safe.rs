@@ -2,21 +2,21 @@ use std::{
     error::Error,
     sync::{
         atomic::AtomicBool,
-        mpsc::{Receiver, channel},
+        mpsc::{channel, Receiver},
     },
 };
 
-use jni::{
-    JNIEnv,
-    objects::{JObject, JObjectArray, JValueGen},
-};
+use jni::descriptors::Desc;
+use jni::objects::{JByteBuffer, JClass};
+use jni::refs::Reference;
+use jni::{jni_sig, jni_str, objects::{JObject, JObjectArray}, Env, JValue, JValueOwned};
 use windows::{
     Foundation::TypedEventHandler,
     Media::Control::{GlobalSystemMediaTransportControlsSession, MediaPropertiesChangedEventArgs},
     Storage::Streams::{Buffer, DataReader, InputStreamOptions},
 };
 
-use crate::{PropsTuple, QUEUE, SongInfoResult, throw_exception};
+use crate::{PropsTuple, SongInfoResult, QUEUE};
 
 pub fn properties_changed(
     session: windows::core::Ref<'_, GlobalSystemMediaTransportControlsSession>,
@@ -34,54 +34,33 @@ pub fn properties_changed(
 }
 
 pub fn wrap_props_in_array<'local>(
-    mut env: JNIEnv<'local>,
+    env: &mut Env<'local>,
     info: PropsTuple,
 ) -> JObjectArray<'local> {
     let (strings, ints, buf) = info;
 
-    let obj_class = env.find_class("java/lang/Object").unwrap();
-    let byte_buffer = env.find_class("java/nio/ByteBuffer").unwrap();
-    let integer = env.find_class("java/lang/Integer").unwrap();
+    let byte_buffer = Desc::<JClass>::lookup(JByteBuffer::class_name(), env).unwrap();
+    let integer = Desc::<JClass>::lookup(jni_str!("java/lang/Integer"), env).unwrap();
     let buf_wrapper = env.byte_array_from_slice(&buf).unwrap();
 
-    let array = env
-        .new_object_array(8, obj_class, JObject::default())
-        .unwrap();
+    let array = JObjectArray::<JObject>::new(env, 8, JObject::default()).unwrap();
 
     for (idx, string) in strings.iter().enumerate() {
-        let jstring = throw_exception!(env, env.new_string(string));
-        throw_exception!(
-            env,
-            env.set_object_array_element(&array, idx as i32, jstring)
-        );
+        let jstring = env.new_string(string).unwrap();
+        array.set_element(env, idx, jstring).unwrap();
     }
 
     for (idx, int) in ints.iter().enumerate() {
-        let jint = throw_exception!(
-            env,
-            env.new_object(&integer, "I)Ljava/lang/Integer;", &[JValueGen::Int(*int)])
-        );
-        throw_exception!(
-            env,
-            env.set_object_array_element(&array, idx as i32 + 5, jint)
-        )
+        let jint = env.call_static_method(&integer, jni_str!("valueOf"), jni_sig!("(I)Ljava/lang/Integer;"), &[JValue::Int(*int)]).unwrap().into_object().unwrap();
+        array.set_element(env, idx + 5, jint).unwrap();
     }
 
-    let byte_buffer = env
-        .call_static_method(
-            byte_buffer,
-            "wrap",
-            "[B)Ljava/nio/ByteBuffer;",
-            &[JValueGen::from(&buf_wrapper)],
-        )
-        .unwrap();
-    let JValueGen::Object(byte_buffer) = byte_buffer else {
-        throw_exception!(
-            env,
-            Err("ByteBuffer was not a ByteBuffer, this should never be thrown")
-        )
+    let byte_buffer = env.call_static_method(byte_buffer, jni_str!("wrap"), jni_sig!("([B)Ljava/nio/ByteBuffer;"), &[JValue::from(&buf_wrapper)]).unwrap();
+    let JValueOwned::Object(byte_buffer) = byte_buffer else {
+        panic!("ByteBuffer was not a ByteBuffer, this should never be thrown")
     };
-    throw_exception!(env, env.set_object_array_element(&array, 7, byte_buffer));
+
+    array.set_element(env, 7, byte_buffer).unwrap();
 
     array
 }
@@ -89,7 +68,7 @@ pub fn wrap_props_in_array<'local>(
 pub fn try_extract_props(
     session: &GlobalSystemMediaTransportControlsSession,
 ) -> Result<PropsTuple, windows::core::Error> {
-    let props = session.TryGetMediaPropertiesAsync()?.get()?;
+    let props = session.TryGetMediaPropertiesAsync()?.join()?;
 
     let title = props.Title()?.to_string();
     let artist = props.Artist()?.to_string();
@@ -98,7 +77,7 @@ pub fn try_extract_props(
     let album_artist = props.AlbumArtist()?.to_string();
     let album_len = props.AlbumTrackCount()?;
     let track_number = props.TrackNumber()?;
-    let icon = props.Thumbnail()?.OpenReadAsync()?.get()?;
+    let icon = props.Thumbnail()?.OpenReadAsync()?.join()?;
 
     let size = icon.Size()?;
     let mut rust_buf = vec![0; size as usize];
@@ -108,7 +87,7 @@ pub fn try_extract_props(
     while total != size {
         let read = icon
             .ReadAsync(&buf, size as u32, InputStreamOptions::None)?
-            .get()?;
+            .join()?;
         let len = read.Length()? as usize;
         let data_reader = DataReader::FromBuffer(&read)?;
         data_reader.ReadBytes(&mut rust_buf[total as usize..total as usize + len])?;
