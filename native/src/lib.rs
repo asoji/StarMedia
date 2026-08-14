@@ -4,14 +4,14 @@ use std::sync::{
 };
 
 use jni::objects::JLongArray;
-use jni::sys::{jboolean, jlongArray, jobjectArray};
+use jni::sys::{jboolean, jint, jlongArray, jobjectArray};
 use jni::{objects::{JClass, JObjectArray}, EnvUnowned};
 use windows::{
     core::Interface, Media::Control::{
         GlobalSystemMediaTransportControlsSession, GlobalSystemMediaTransportControlsSessionManager,
     }
 };
-
+use windows::Media::Control::GlobalSystemMediaTransportControlsSessionPlaybackStatus;
 use crate::safe::{
     set_properties_changed_callback, try_extract_props, try_get_timeline_props, wrap_props_in_array,
 };
@@ -221,7 +221,7 @@ pub extern "system" fn try_skip_next<'local>(
     outcome.resolve::<jni::errors::ThrowRuntimeExAndDefault>()
 }
 
-#[unsafe(export_name = "Java_one_devos_nautical_starmedia_StarMediaLib_TrySkipPrevious")]
+#[unsafe(export_name = "Java_one_devos_nautical_starmedia_StarMediaLib_trySkipPrevious")]
 pub extern "system" fn try_skip_previous<'local>(
     mut unowned_env: EnvUnowned<'local>,
     _: JClass<'local>,
@@ -238,3 +238,22 @@ pub extern "system" fn try_skip_previous<'local>(
 
     outcome.resolve::<jni::errors::ThrowRuntimeExAndDefault>()
 }
+
+#[unsafe(export_name = "Java_one_devos_nautical_starmedia_StarMediaLib_getStatus")]
+pub extern "system" fn get_status<'local>(
+    mut unowned_env: EnvUnowned<'local>,
+    _: JClass<'local>,
+    gsmtcs: usize,
+) -> jint {
+    let outcome = unowned_env.with_env(|_env| -> jni::errors::Result<jint> {
+        let ptr = std::ptr::with_exposed_provenance_mut(gsmtcs);
+
+        let gsmtcs =
+            unsafe { GlobalSystemMediaTransportControlsSession::from_raw_borrowed(&ptr).unwrap() };
+
+        Ok(gsmtcs.GetPlaybackInfo().unwrap().PlaybackStatus().unwrap().0)
+    });
+
+    outcome.resolve::<jni::errors::ThrowRuntimeExAndDefault>()
+}
+
