@@ -5,10 +5,7 @@ import org.slf4j.LoggerFactory
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
-import kotlin.io.path.Path
-import kotlin.io.path.absolutePathString
-import kotlin.io.path.createDirectories
-import kotlin.io.path.exists
+import kotlin.io.path.*
 
 object StarMediaLib {
     private external fun requestManager(): Long
@@ -93,10 +90,7 @@ object StarMediaLib {
     private fun tryLoadFromClassPath(fullLibName: String): Path {
         val classLoader = StarMediaLib::class.java.classLoader
 
-        val tmpDir = Path(System.getProperty("java.io.tmpdir")).resolve("starmedia-natives")
-
-        if (!tmpDir.exists())
-            tmpDir.createDirectories()
+        val tmpDir = Path(System.getProperty("java.io.tmpdir")).resolve("starmedia-natives/${ProcessHandle.current().pid()}-${System.currentTimeMillis()}")
 
         val osName = System.getProperty("os.name").lowercase()
         val isWindows = osName.contains("win")
@@ -111,6 +105,18 @@ object StarMediaLib {
         val dir = "starmedia_natives/${if (isWindows) "windows" else if (isMac) "osx" else "linux"}/${osArch}"
 
         classLoader.getResourceAsStream("$dir/$fullLibName")?.use {
+            if (!tmpDir.exists())
+                tmpDir.createDirectories()
+
+            // delete these files on shutdown, since they're temp files
+            Runtime.getRuntime().addShutdownHook(Thread {
+                try {
+                    tmpDir.deleteIfExists()
+                } catch (e: Throwable) {
+                    e.printStackTrace()
+                }
+            })
+
             val libPath = tmpDir.resolve(fullLibName)
             try {
                 Files.copy(it, libPath, StandardCopyOption.REPLACE_EXISTING)
