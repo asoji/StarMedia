@@ -5,6 +5,9 @@ import org.slf4j.LoggerFactory
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
+import java.nio.file.StandardOpenOption
+import java.security.DigestInputStream
+import java.security.MessageDigest
 import kotlin.io.path.*
 
 object StarMediaLib {
@@ -90,8 +93,6 @@ object StarMediaLib {
     private fun tryLoadFromClassPath(fullLibName: String): Path {
         val classLoader = StarMediaLib::class.java.classLoader
 
-        val tmpDir = Path(System.getProperty("java.io.tmpdir")).resolve("starmedia-natives/${ProcessHandle.current().pid()}-${System.currentTimeMillis()}")
-
         val osName = System.getProperty("os.name").lowercase()
         val isWindows = osName.contains("win")
         val isMac = osName.contains("mac")
@@ -104,33 +105,99 @@ object StarMediaLib {
 
         val dir = "starmedia_natives/${if (isWindows) "windows" else if (isMac) "osx" else "linux"}/${osArch}"
 
-        classLoader.getResourceAsStream("$dir/$fullLibName")?.use {
-            if (!tmpDir.exists())
-                tmpDir.createDirectories()
+        val libraryResource = classLoader.getResource("$dir/$fullLibName")
+            ?: throw Exception("Could not locate StarMedia natives for platform $osName $osArch!")
 
-            // delete these files on shutdown, since they're temp files
-            Runtime.getRuntime().addShutdownHook(Thread {
-                try {
-                    tmpDir.deleteIfExists()
-                } catch (e: Throwable) {
-                    e.printStackTrace()
+        val tmpDir = Path(System.getProperty("java.io.tmpdir")).resolve("starmedia-natives")
+
+        if (!tmpDir.exists())
+            tmpDir.createDirectories()
+
+        // first, try to hash the file
+        val digest = MessageDigest.getInstance("MD5")
+        libraryResource.openStream().use {
+            DigestInputStream(it, digest).readAllBytes()
+        }
+
+        val expectedHash = digest.digest().toHexString()
+        val hashedTmpDir = tmpDir.resolve(expectedHash)
+        if (!hashedTmpDir.exists())
+            hashedTmpDir.createDirectories()
+
+        val starMediaPath = hashedTmpDir.resolve(fullLibName)
+        val lockFile = hashedTmpDir.resolve("session.lock")
+
+        if (starMediaPath.exists()) {
+            // hash the file and see if it matches
+            starMediaPath.inputStream(StandardOpenOption.READ).use {
+                DigestInputStream(it, digest).readAllBytes()
+            }
+
+            // hash matches, we're good
+            if (expectedHash == digest.digest().toHexString())
+                return hashedTmpDir
+
+            // nope, let's see if someone's currently copying it.
+            // if so, we should block the thread until the lock is invalid.
+            if (lockFile.exists()) {
+                val pid = lockFile.readText().trim().toLongOrNull()
+                if (pid != null && ProcessHandle.of(pid).isPresent) {
+                    while (true) {
+                        // check if the lock file still exists
+                        val pid = if (lockFile.exists()) {
+                            lockFile.readText().trim().toLongOrNull()
+                        } else break
+
+                        // also check if the process still exists
+                        if (pid == null || ProcessHandle.of(pid).isEmpty)
+                            break
+
+                        // let's not check too frequently...
+                        Thread.sleep(2_500L)
+                    }
+
+                    // okay, let's check again just to be safe.
+                    starMediaPath.inputStream(StandardOpenOption.READ).use {
+                        DigestInputStream(it, digest).readAllBytes()
+                    }
+
+                    if (expectedHash == digest.digest().toHexString())
+                        return hashedTmpDir
                 }
-            })
 
-            val libPath = tmpDir.resolve(fullLibName)
-            try {
-                Files.copy(it, libPath, StandardCopyOption.REPLACE_EXISTING)
-            } catch (e: AccessDeniedException) {
-                if (!libPath.exists())
-                    throw e
+                // fuck, okay let's continue extracting us I guess, we assume the program crashed or failed or something.
             }
         }
 
-        val starMediaPath = tmpDir.resolve(fullLibName)
+        libraryResource.openStream().use {
+            try {
+                // we want to make sure we're not copying all at once.
+                lockFile.writeText("${ProcessHandle.current().pid()}", options = arrayOf(StandardOpenOption.WRITE, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING))
+
+                Files.copy(it, starMediaPath, StandardCopyOption.REPLACE_EXISTING)
+            } catch (e: AccessDeniedException) {
+                if (!starMediaPath.exists())
+                    throw e
+            } finally {
+                // okay, we're done here.
+                lockFile.deleteIfExists()
+            }
+        }
+
         if (!starMediaPath.exists())
             throw Exception("Failed to extract library files for StarMedia!")
+        else {
+            starMediaPath.inputStream(StandardOpenOption.READ).use {
+                DigestInputStream(it, digest).readAllBytes()
+            }
 
-        return tmpDir
+            // uh oh
+            val actualHash = digest.digest().toHexString()
+            if (expectedHash != actualHash)
+                throw IllegalStateException("Extracted library hash for StarMedia does not match! (expected: $expectedHash, got: $actualHash)")
+        }
+
+        return hashedTmpDir
     }
 
     @JvmStatic
