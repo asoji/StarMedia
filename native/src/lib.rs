@@ -24,7 +24,7 @@ type SongInfoResult = Result<PropsTuple, windows::core::Error>;
 
 static QUEUE: RwLock<Vec<Option<Sender<SongInfoResult>>>> = RwLock::new(Vec::new());
 
-#[unsafe(export_name = "Java_one_devos_nautical_starmedia_StarMediaLib_setPropertyChangedCallback")]
+#[unsafe(export_name = "Java_gay_asoji_starmedia_StarMediaLib_setPropertyChangedCallback")]
 pub extern "system" fn properties_changed_callback<'local>(
     mut unowned_env: EnvUnowned<'local>,
     _: JClass<'local>,
@@ -68,7 +68,7 @@ pub extern "system" fn drop_receiver_remove_sender<'local>(
     outcome.resolve::<jni::errors::ThrowRuntimeExAndDefault>();
 }
 
-#[unsafe(export_name = "Java_one_devos_nautical_starmedia_StarMediaLib_getSongInfo")]
+#[unsafe(export_name = "Java_gay_asoji_starmedia_StarMediaLib_getSongInfo")]
 pub extern "system" fn get_song_info<'local>(
     mut unowned_env: EnvUnowned<'local>,
     _: JClass<'local>,
@@ -92,7 +92,7 @@ pub extern "system" fn get_song_info<'local>(
     outcome.resolve::<jni::errors::ThrowRuntimeExAndDefault>()
 }
 
-#[unsafe(export_name = "Java_one_devos_nautical_starmedia_StarMediaLib_requestManager")]
+#[unsafe(export_name = "Java_gay_asoji_starmedia_StarMediaLib_requestManager")]
 pub extern "system" fn request_manager<'local>(
     mut unowned_env: EnvUnowned<'local>,
     _: JClass<'local>,
@@ -108,7 +108,7 @@ pub extern "system" fn request_manager<'local>(
     outcome.resolve::<jni::errors::ThrowRuntimeExAndDefault>()
 }
 
-#[unsafe(export_name = "Java_one_devos_nautical_starmedia_StarMediaLib_metadata")]
+#[unsafe(export_name = "Java_gay_asoji_starmedia_StarMediaLib_metadata")]
 pub extern "system" fn metadata<'local>(
     mut unowned_env: EnvUnowned<'local>,
     _: JClass<'local>,
@@ -127,7 +127,7 @@ pub extern "system" fn metadata<'local>(
     outcome.resolve::<jni::errors::ThrowRuntimeExAndDefault>()
 }
 
-#[unsafe(export_name = "Java_one_devos_nautical_starmedia_StarMediaLib_timeline")]
+#[unsafe(export_name = "Java_gay_asoji_starmedia_StarMediaLib_timeline")]
 pub extern "system" fn timeline<'local>(
     mut unowned_env: EnvUnowned<'local>,
     _: JClass<'local>,
@@ -149,7 +149,7 @@ pub extern "system" fn timeline<'local>(
     outcome.resolve::<jni::errors::ThrowRuntimeExAndDefault>()
 }
 
-#[unsafe(export_name = "Java_one_devos_nautical_starmedia_StarMediaLib_tryPause")]
+#[unsafe(export_name = "Java_gay_asoji_starmedia_StarMediaLib_tryPause")]
 pub extern "system" fn try_pause<'local>(
     mut unowned_env: EnvUnowned<'local>,
     _: JClass<'local>,
@@ -167,7 +167,7 @@ pub extern "system" fn try_pause<'local>(
     outcome.resolve::<jni::errors::ThrowRuntimeExAndDefault>()
 }
 
-#[unsafe(export_name = "Java_one_devos_nautical_starmedia_StarMediaLib_tryPlay")]
+#[unsafe(export_name = "Java_gay_asoji_starmedia_StarMediaLib_tryPlay")]
 pub extern "system" fn try_play<'local>(
     mut unowned_env: EnvUnowned<'local>,
     _: JClass<'local>,
@@ -185,7 +185,7 @@ pub extern "system" fn try_play<'local>(
     outcome.resolve::<jni::errors::ThrowRuntimeExAndDefault>()
 }
 
-#[unsafe(export_name = "Java_one_devos_nautical_starmedia_StarMediaLib_tryTogglePlayPause")]
+#[unsafe(export_name = "Java_gay_asoji_starmedia_StarMediaLib_tryTogglePlayPause")]
 pub extern "system" fn try_toggle_pause_play<'local>(
     mut unowned_env: EnvUnowned<'local>,
     _: JClass<'local>,
@@ -203,7 +203,7 @@ pub extern "system" fn try_toggle_pause_play<'local>(
     outcome.resolve::<jni::errors::ThrowRuntimeExAndDefault>()
 }
 
-#[unsafe(export_name = "Java_one_devos_nautical_starmedia_StarMediaLib_trySkipNext")]
+#[unsafe(export_name = "Java_gay_asoji_starmedia_StarMediaLib_trySkipNext")]
 pub extern "system" fn try_skip_next<'local>(
     mut unowned_env: EnvUnowned<'local>,
     _: JClass<'local>,
@@ -221,7 +221,7 @@ pub extern "system" fn try_skip_next<'local>(
     outcome.resolve::<jni::errors::ThrowRuntimeExAndDefault>()
 }
 
-#[unsafe(export_name = "Java_one_devos_nautical_starmedia_StarMediaLib_trySkipPrevious")]
+#[unsafe(export_name = "Java_gay_asoji_starmedia_StarMediaLib_trySkipPrevious")]
 pub extern "system" fn try_skip_previous<'local>(
     mut unowned_env: EnvUnowned<'local>,
     _: JClass<'local>,
@@ -239,7 +239,7 @@ pub extern "system" fn try_skip_previous<'local>(
     outcome.resolve::<jni::errors::ThrowRuntimeExAndDefault>()
 }
 
-#[unsafe(export_name = "Java_one_devos_nautical_starmedia_StarMediaLib_getStatus")]
+#[unsafe(export_name = "Java_gay_asoji_starmedia_StarMediaLib_getStatus")]
 pub extern "system" fn get_status<'local>(
     mut unowned_env: EnvUnowned<'local>,
     _: JClass<'local>,

@@ -6,7 +6,7 @@ plugins {
     id("rust-setup")
 }
 
-group = "one.devos.nautical"
+group = "gay.asoji"
 version = "${rootProject.property("starmedia_version")}"
 
 base {

@@ -1,4 +1,4 @@
-package one.devos.nautical.starmedia
+package gay.asoji.starmedia
 
 data class MediaTimeline(
     val startTime: Long,
