@@ -12,6 +12,7 @@ import kotlin.io.path.*
 
 object StarMediaLib {
     private external fun requestManager(): Long
+    private external fun requestSession(manager: Long): Long
     private external fun tryPlay(manager: Long): Boolean
     private external fun tryPause(manager: Long): Boolean
     private external fun tryTogglePlayPause(manager: Long): Boolean
@@ -25,22 +26,26 @@ object StarMediaLib {
     private external fun dropReceiver(ptr: Long, index: Long)
     private external fun getSongInfo(ptr: Long): Array<Any?>
 
-    fun getStatus(): PlaybackStatus {
-        return PlaybackStatus.fromGSMTCS(this.getStatus(this.requestManager()))
+    private val manager: Long by lazy {
+        this.requestManager()
     }
 
-    fun tryPlay(): Boolean = this.tryPlay(this.requestManager())
-    fun tryPause(): Boolean = this.tryPause(this.requestManager())
-    fun tryTogglePlayPause(): Boolean = this.tryTogglePlayPause(this.requestManager())
-    fun trySkipNext(): Boolean = this.trySkipNext(this.requestManager())
-    fun trySkipPrevious(): Boolean = this.trySkipPrevious(this.requestManager())
-    fun metadata(): MediaMetadata? = this.metadata(this.requestManager())
+    private fun requestSession(): Long = this.requestSession(this.manager)
+
+    fun getStatus(): PlaybackStatus = PlaybackStatus.fromGSMTCS(this.getStatus(this.requestSession()))
+
+    fun tryPlay(): Boolean = this.tryPlay(this.requestSession())
+    fun tryPause(): Boolean = this.tryPause(this.requestSession())
+    fun tryTogglePlayPause(): Boolean = this.tryTogglePlayPause(this.requestSession())
+    fun trySkipNext(): Boolean = this.trySkipNext(this.requestSession())
+    fun trySkipPrevious(): Boolean = this.trySkipPrevious(this.requestSession())
+    fun metadata(): MediaMetadata? = this.metadata(this.requestSession())
         ?.let { MediaMetadata.fromGSMTCS(it) }
     fun timeline(): MediaTimeline? = try {
-        MediaTimeline.fromGSMTCS(this.timeline(this.requestManager()))
+        MediaTimeline.fromGSMTCS(this.timeline(this.requestSession()))
     } catch (_: Throwable) { null }
 
-    fun addPropertyChangedCallback(): PropertyChangedCallbackInfo = this.setPropertyChangedCallback(this.requestManager())
+    fun addPropertyChangedCallback(): PropertyChangedCallbackInfo = this.setPropertyChangedCallback(this.requestSession())
         .let { PropertyChangedCallbackInfo.fromGSMTCS(it) }
 
     // Taken from UnityTranslateLib [thanks Naz]

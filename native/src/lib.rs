@@ -1,8 +1,13 @@
+use std::ops::Deref;
+use std::ptr::with_exposed_provenance_mut;
 use std::sync::{
     mpsc::{Receiver, Sender, TryRecvError},
     RwLock,
 };
 
+use crate::safe::{
+    set_properties_changed_callback, try_extract_props, try_get_timeline_props, wrap_props_in_array,
+};
 use jni::objects::JLongArray;
 use jni::sys::{jboolean, jint, jlongArray, jobjectArray};
 use jni::{objects::{JClass, JObjectArray}, EnvUnowned};
@@ -10,10 +15,6 @@ use windows::{
     core::Interface, Media::Control::{
         GlobalSystemMediaTransportControlsSession, GlobalSystemMediaTransportControlsSessionManager,
     }
-};
-use windows::Media::Control::GlobalSystemMediaTransportControlsSessionPlaybackStatus;
-use crate::safe::{
-    set_properties_changed_callback, try_extract_props, try_get_timeline_props, wrap_props_in_array,
 };
 
 mod safe;
@@ -31,7 +32,7 @@ pub extern "system" fn properties_changed_callback<'local>(
     gsmtcs: usize,
 ) -> jlongArray {
     let outcome = unowned_env.with_env(|env| -> jni::errors::Result<jlongArray> {
-        let ptr = std::ptr::with_exposed_provenance_mut(gsmtcs);
+        let ptr = with_exposed_provenance_mut(gsmtcs);
 
         let current_session =
             unsafe { GlobalSystemMediaTransportControlsSession::from_raw_borrowed(&ptr).unwrap() };
@@ -57,7 +58,7 @@ pub extern "system" fn drop_receiver_remove_sender<'local>(
     idx: usize,
 ) {
     let outcome = unowned_env.with_env(|env| -> jni::errors::Result<_> {
-        let rx = std::ptr::with_exposed_provenance_mut::<Receiver<SongInfoResult>>(ptr);
+        let rx = with_exposed_provenance_mut::<Receiver<SongInfoResult>>(ptr);
         let alloc = unsafe { Box::from_raw(rx) };
         drop(alloc);
 
@@ -75,7 +76,7 @@ pub extern "system" fn get_song_info<'local>(
     ptr: usize,
 ) -> jobjectArray {
     let outcome = unowned_env.with_env(|env| -> jni::errors::Result<jobjectArray> {
-        let rx = std::ptr::with_exposed_provenance_mut::<Receiver<SongInfoResult>>(ptr);
+        let rx = with_exposed_provenance_mut::<Receiver<SongInfoResult>>(ptr);
         let rx = unsafe { &mut *rx };
 
         match rx.try_recv() {
@@ -99,7 +100,23 @@ pub extern "system" fn request_manager<'local>(
 ) -> usize {
     let outcome = unowned_env.with_env(|_env| -> jni::errors::Result<usize> {
         let manager = GlobalSystemMediaTransportControlsSessionManager::RequestAsync().unwrap();
-        let gsmtcs =  manager.join().unwrap();
+        let gsmtcs = manager.join().unwrap();
+
+        Ok(gsmtcs.into_raw().expose_provenance())
+    });
+
+    outcome.resolve::<jni::errors::ThrowRuntimeExAndDefault>()
+}
+
+#[unsafe(export_name = "Java_gay_asoji_starmedia_StarMediaLib_requestSession")]
+pub extern "system" fn request_session<'local>(
+    mut unowned_env: EnvUnowned<'local>,
+    _: JClass<'local>,
+    manager: usize,
+) -> usize {
+    let outcome = unowned_env.with_env(|_env| -> jni::errors::Result<usize> {
+        let ptr = with_exposed_provenance_mut(manager);
+        let gsmtcs = unsafe { GlobalSystemMediaTransportControlsSessionManager::from_raw_borrowed(&ptr).unwrap() };
         let current_session = gsmtcs.GetCurrentSession().unwrap();
 
         Ok(current_session.into_raw().expose_provenance())
@@ -115,7 +132,7 @@ pub extern "system" fn metadata<'local>(
     gsmtcs: usize,
 ) -> JObjectArray<'local> {
     let outcome = unowned_env.with_env(|env| -> jni::errors::Result<JObjectArray<'local>> {
-        let ptr = std::ptr::with_exposed_provenance_mut(gsmtcs);
+        let ptr = with_exposed_provenance_mut(gsmtcs);
 
         let current_session =
             unsafe { GlobalSystemMediaTransportControlsSession::from_raw_borrowed(&ptr).unwrap() };
@@ -134,7 +151,7 @@ pub extern "system" fn timeline<'local>(
     gsmtcs: usize,
 ) -> JLongArray<'local> {
     let outcome = unowned_env.with_env(|env| -> jni::errors::Result<JLongArray> {
-        let ptr = std::ptr::with_exposed_provenance_mut(gsmtcs);
+        let ptr = with_exposed_provenance_mut(gsmtcs);
         let current_session =
             unsafe { GlobalSystemMediaTransportControlsSession::from_raw_borrowed(&ptr).unwrap() };
 
@@ -156,7 +173,7 @@ pub extern "system" fn try_pause<'local>(
     gsmtcs: usize,
 ) -> jboolean {
     let outcome = unowned_env.with_env(|_env| -> jni::errors::Result<jboolean> {
-        let ptr = std::ptr::with_exposed_provenance_mut(gsmtcs);
+        let ptr = with_exposed_provenance_mut(gsmtcs);
 
         let gsmtcs =
             unsafe { GlobalSystemMediaTransportControlsSession::from_raw_borrowed(&ptr).unwrap() };
@@ -174,7 +191,7 @@ pub extern "system" fn try_play<'local>(
     gsmtcs: usize,
 ) -> bool {
     let outcome = unowned_env.with_env(|_env| -> jni::errors::Result<jboolean> {
-        let ptr = std::ptr::with_exposed_provenance_mut(gsmtcs);
+        let ptr = with_exposed_provenance_mut(gsmtcs);
 
         let gsmtcs =
             unsafe { GlobalSystemMediaTransportControlsSession::from_raw_borrowed(&ptr).unwrap() };
@@ -192,7 +209,7 @@ pub extern "system" fn try_toggle_pause_play<'local>(
     gsmtcs: usize,
 ) -> bool {
     let outcome = unowned_env.with_env(|_env| -> jni::errors::Result<jboolean> {
-        let ptr = std::ptr::with_exposed_provenance_mut(gsmtcs);
+        let ptr = with_exposed_provenance_mut(gsmtcs);
 
         let gsmtcs =
             unsafe { GlobalSystemMediaTransportControlsSession::from_raw_borrowed(&ptr).unwrap() };
@@ -210,7 +227,7 @@ pub extern "system" fn try_skip_next<'local>(
     gsmtcs: usize,
 ) -> bool {
     let outcome = unowned_env.with_env(|_env| -> jni::errors::Result<jboolean> {
-        let ptr = std::ptr::with_exposed_provenance_mut(gsmtcs);
+        let ptr = with_exposed_provenance_mut(gsmtcs);
 
         let gsmtcs =
             unsafe { GlobalSystemMediaTransportControlsSession::from_raw_borrowed(&ptr).unwrap() };
@@ -228,7 +245,7 @@ pub extern "system" fn try_skip_previous<'local>(
     gsmtcs: usize,
 ) -> bool {
     let outcome = unowned_env.with_env(|_env| -> jni::errors::Result<jboolean> {
-        let ptr = std::ptr::with_exposed_provenance_mut(gsmtcs);
+        let ptr = with_exposed_provenance_mut(gsmtcs);
 
         let gsmtcs =
             unsafe { GlobalSystemMediaTransportControlsSession::from_raw_borrowed(&ptr).unwrap() };
@@ -246,7 +263,7 @@ pub extern "system" fn get_status<'local>(
     gsmtcs: usize,
 ) -> jint {
     let outcome = unowned_env.with_env(|_env| -> jni::errors::Result<jint> {
-        let ptr = std::ptr::with_exposed_provenance_mut(gsmtcs);
+        let ptr = with_exposed_provenance_mut(gsmtcs);
 
         let gsmtcs =
             unsafe { GlobalSystemMediaTransportControlsSession::from_raw_borrowed(&ptr).unwrap() };
