@@ -30,23 +30,33 @@ object StarMediaLib {
         this.requestManager()
     }
 
-    private fun requestSession(): Long = this.requestSession(this.manager)
+    private fun requestSession(): Long? {
+        val manager = this.manager
+        if (manager == 0L)
+            throw IllegalStateException("GSMTCS manager returned NULL!")
+        
+        val session = this.requestSession(manager)
+        if (session == 0L)
+            return null
 
-    fun getStatus(): PlaybackStatus = PlaybackStatus.fromGSMTCS(this.getStatus(this.requestSession()))
+        return session
+    }
 
-    fun tryPlay(): Boolean = this.tryPlay(this.requestSession())
-    fun tryPause(): Boolean = this.tryPause(this.requestSession())
-    fun tryTogglePlayPause(): Boolean = this.tryTogglePlayPause(this.requestSession())
-    fun trySkipNext(): Boolean = this.trySkipNext(this.requestSession())
-    fun trySkipPrevious(): Boolean = this.trySkipPrevious(this.requestSession())
-    fun metadata(): MediaMetadata? = this.metadata(this.requestSession())
-        ?.let { MediaMetadata.fromGSMTCS(it) }
-    fun timeline(): MediaTimeline? = try {
-        MediaTimeline.fromGSMTCS(this.timeline(this.requestSession()))
-    } catch (_: Throwable) { null }
+    fun getStatus(): PlaybackStatus = this.requestSession()?.let { PlaybackStatus.fromGSMTCS(this.getStatus(it)) } ?: PlaybackStatus.UNKNOWN
 
-    fun addPropertyChangedCallback(): PropertyChangedCallbackInfo = this.setPropertyChangedCallback(this.requestSession())
-        .let { PropertyChangedCallbackInfo.fromGSMTCS(it) }
+    fun tryPlay(): Boolean = this.requestSession()?.let { this.tryPlay(it) } ?: false
+    fun tryPause(): Boolean = this.requestSession()?.let { this.tryPause(it) } ?: false
+    fun tryTogglePlayPause(): Boolean = this.requestSession()?.let { this.tryTogglePlayPause(it) } ?: false
+    fun trySkipNext(): Boolean = this.requestSession()?.let { this.trySkipNext(it) } ?: false
+    fun trySkipPrevious(): Boolean = this.requestSession()?.let { this.trySkipPrevious(it) } ?: false
+    fun metadata(): MediaMetadata? = this.requestSession()?.let { session -> this.metadata(session)
+        ?.let { MediaMetadata.fromGSMTCS(it) } }
+    fun timeline(): MediaTimeline? = this.requestSession()?.let { session -> try {
+        MediaTimeline.fromGSMTCS(this.timeline(session))
+    } catch (_: Throwable) { null } }
+
+    fun addPropertyChangedCallback(): PropertyChangedCallbackInfo? = this.requestSession()?.let { session -> this.setPropertyChangedCallback(session)
+        .let { PropertyChangedCallbackInfo.fromGSMTCS(it) } }
 
     // Taken from UnityTranslateLib [thanks Naz]
     val logger: Logger = LoggerFactory.getLogger(StarMediaLib::class.java)

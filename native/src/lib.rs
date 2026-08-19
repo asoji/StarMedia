@@ -99,9 +99,21 @@ pub extern "system" fn request_manager<'local>(
 ) -> usize {
     let outcome = unowned_env.with_env(|_env| -> jni::errors::Result<usize> {
         let manager = GlobalSystemMediaTransportControlsSessionManager::RequestAsync().unwrap();
-        let gsmtcs = manager.join().unwrap();
+        let gsmtcs = manager.join();
 
-        Ok(gsmtcs.into_raw().expose_provenance())
+        match gsmtcs {
+            Ok(result) => {
+                Ok(result.into_raw().expose_provenance())
+            }
+
+            Err(error) => {
+                if error.code().is_ok() {
+                    Ok(0)
+                } else {
+                    panic!("Failed to request for GSMTCS manager: {:?}", error.message().as_str())
+                }
+            }
+        }
     });
 
     outcome.resolve::<jni::errors::ThrowRuntimeExAndDefault>()
@@ -116,9 +128,21 @@ pub extern "system" fn request_session<'local>(
     let outcome = unowned_env.with_env(|_env| -> jni::errors::Result<usize> {
         let ptr = with_exposed_provenance_mut(manager);
         let gsmtcs = unsafe { GlobalSystemMediaTransportControlsSessionManager::from_raw_borrowed(&ptr).unwrap() };
-        let current_session = gsmtcs.GetCurrentSession().unwrap();
+        let current_session = gsmtcs.GetCurrentSession();
 
-        Ok(current_session.into_raw().expose_provenance())
+        match current_session {
+            Ok(result) => {
+                Ok(result.into_raw().expose_provenance())
+            }
+
+            Err(error) => {
+                if error.code().is_ok() {
+                    Ok(0)
+                } else {
+                    panic!("Failed to request for session: {:?}", error.message().as_str())
+                }
+            }
+        }
     });
 
     outcome.resolve::<jni::errors::ThrowRuntimeExAndDefault>()
