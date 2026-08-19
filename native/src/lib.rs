@@ -1,4 +1,3 @@
-use std::ops::Deref;
 use std::ptr::with_exposed_provenance_mut;
 use std::sync::{
     mpsc::{Receiver, Sender, TryRecvError},
